@@ -4,7 +4,7 @@ A Go CLI for macOS that manages a per-user [Grafana Alloy](https://grafana.com/d
 
 ## Status
 
-Pre-1.0. Working: collector lifecycle, `spawn-claude run` (local + `--direct`), and vendor presets for SignOz Cloud and Grafana Cloud. `doctor` and the release pipeline are still pending — see [Roadmap](#roadmap).
+Pre-1.0. Working: collector lifecycle, `spawn-claude run` (local + `--direct`), vendor presets for SignOz Cloud and Grafana Cloud, and end-to-end `spawn-claude doctor`. The release pipeline (signed binaries, Homebrew tap) is the last remaining PR — see [Roadmap](#roadmap).
 
 Platform: **macOS on Apple Silicon (darwin/arm64) only.**
 
@@ -79,6 +79,7 @@ spawn-claude run --direct -- <claude args>                   # sends OTLP straig
 | `spawn-claude collector logs [-f]` | Print `~/Library/Logs/alloy/stderr.log`. `-f` follows. |
 | `spawn-claude collector configure <preset>` | Render a preset into `~/.config/alloy/config.alloy`, `alloy fmt` it, atomically swap, hot-reload. `--list` shows options. `--set-direct` also updates `config.toml`. |
 | `spawn-claude run [-- claude-args]` | Exec `claude` with OTLP env vars pointed at the local collector. Flags: `--direct`, `--vendor`, `--skip-ready-check`, `--print-env`. |
+| `spawn-claude doctor` | Run end-to-end health checks (claude on PATH, alloy installed, LaunchAgent running, /-/ready, OTLP ports listening). Exits 1 on any failure. |
 | `spawn-claude version` | Print the spawn-claude version and the default Alloy version. |
 
 ## File layout after install
@@ -114,7 +115,7 @@ spawn-claude collector uninstall --purge  # also remove binary, ~/.config/alloy/
 
 - ~~**PR2** — `spawn-claude run`.~~ ✅ shipped
 - ~~**PR3** — Presets, `collector configure`, `run --direct`.~~ ✅ shipped
-- **PR4** — `spawn-claude doctor` end-to-end health check, including a smoke-test trace export.
+- ~~**PR4** — `spawn-claude doctor`.~~ ✅ shipped
 - **PR5** — goreleaser pipeline, signed macOS binaries, Homebrew tap.
 
 ## Development
