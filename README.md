@@ -1,32 +1,41 @@
 # spawn-claude
 
-Reproducible setup for running Grafana Alloy as a user-level LaunchAgent on macOS (Apple Silicon). The intended next step is wiring Claude Code OTLP telemetry into `config.alloy`.
+A Go CLI for macOS that manages a per-user [Grafana Alloy](https://grafana.com/docs/alloy/) collector for Claude Code OTLP telemetry. The long-term goal is a single `spawn-claude` command that both (a) runs `claude` with the OTLP environment variables from the [SignOz Claude Code monitoring guide](https://signoz.io/docs/claude-code-monitoring/) and (b) forwards that telemetry through a local Alloy collector that can be pointed at SignOz, Grafana Cloud, or any other OTLP-compatible backend.
 
-## Why not `brew install grafana/grafana/alloy`
+## Status
 
-The Homebrew formula builds from source. On this machine (macOS 14.5, Command Line Tools 15.3) `go build` fails with:
+Pre-1.0. This release ships only the **collector lifecycle** commands. The `spawn-claude run` wrapper and the preset-based backend configuration land in subsequent releases — see [Roadmap](#roadmap).
 
+Platform: **macOS on Apple Silicon (darwin/arm64) only.**
+
+## Install
+
+```bash
+go install github.com/hionnode/spawn-claude@latest
 ```
-ld: B/BL out of range -148443508 (max +/-128MB) from ...
-clang: error: linker command failed with exit code 1
+
+Signed binary releases and a Homebrew tap land with PR6.
+
+## Quickstart
+
+```bash
+spawn-claude collector install
+spawn-claude collector status
 ```
 
-Apple's old `ld` in CLT 15.3 can't resolve branch islands for Alloy's ~500 MB Go binary on arm64. Newer CLT (16.x, which ships `ld-prime`) fixes it, but upgrading CLT needs a ~5 GB install and `sudo`. Tracking issue: [grafana/homebrew-grafana#134](https://github.com/grafana/homebrew-grafana/issues/134) (Homebrew bottles for alloy).
+`install` downloads the pinned Alloy binary (`v1.15.1`), drops a placeholder config at `~/.config/alloy/config.alloy`, renders a LaunchAgent plist, and waits for `http://127.0.0.1:12345/-/ready`. Until you populate the config with an OTLP receiver + exporter, the collector runs but does nothing useful.
 
-This bundle skips the build and installs the prebuilt binary from GitHub releases.
+## Commands
 
-## What `install.sh` does
-
-1. Guard: darwin/arm64 only
-2. Downloads `alloy-darwin-arm64.zip` at pinned `ALLOY_VERSION` (change one variable at the top of `install.sh` to bump) → `~/.local/bin/alloy`
-3. Strips `com.apple.quarantine` xattr
-4. Creates `~/.config/alloy/data/` and `~/Library/Logs/alloy/`
-5. Drops `config.alloy` into `~/.config/alloy/` only if not already present (preserves your edits)
-6. Renders `com.grafana.alloy.plist` (substitutes `__HOME__` → `$HOME`) into `~/Library/LaunchAgents/`
-7. `launchctl bootstrap` into `gui/$(id -u)` — starts now and on every login
-8. Polls `http://127.0.0.1:12345/-/ready` until HTTP 200 or times out
-
-`KeepAlive` is set to restart on crash but not on clean exits, so `launchctl kickstart -k` cycles cleanly.
+| Command | What it does |
+|---|---|
+| `spawn-claude collector install [--alloy-version vX.Y.Z]` | Download Alloy, render the plist, `launchctl bootstrap` it, wait for ready. Idempotent. |
+| `spawn-claude collector uninstall [--purge]` | `launchctl bootout` and remove the plist. `--purge` also deletes the binary, config, and logs. |
+| `spawn-claude collector status` | Show whether the agent is loaded + whether the UI is ready. Exits 1 on any failure. |
+| `spawn-claude collector restart` | `launchctl kickstart -k`, then wait for ready. |
+| `spawn-claude collector reload` | Hot-reload the config via `POST /-/reload` (no process restart). |
+| `spawn-claude collector logs [-f]` | Print `~/Library/Logs/alloy/stderr.log`. `-f` follows. |
+| `spawn-claude version` | Print the spawn-claude version and the default Alloy version. |
 
 ## File layout after install
 
@@ -39,35 +48,39 @@ This bundle skips the build and installs the prebuilt binary from GitHub release
 | LaunchAgent | `~/Library/LaunchAgents/com.grafana.alloy.plist` |
 | UI | http://127.0.0.1:12345 |
 
-## Install
+## Why download a prebuilt binary instead of `brew install grafana/grafana/alloy`
 
-```bash
-cd ~/code/agency/spawn-claude
-./install.sh
+The Homebrew formula builds from source. On macOS 14.5 with Command Line Tools 15.3, `go build` fails with:
+
+```
+ld: B/BL out of range -148443508 (max +/-128MB) from ...
+clang: error: linker command failed with exit code 1
 ```
 
-## Day-to-day
-
-```bash
-# Check it's up
-launchctl list | grep com.grafana.alloy       # col 2 = last exit code (0 = healthy)
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:12345/-/ready
-
-# After editing ~/.config/alloy/config.alloy
-curl -X POST http://127.0.0.1:12345/-/reload                # hot reload
-launchctl kickstart -k gui/$(id -u)/com.grafana.alloy       # hard restart
-
-# Live logs
-tail -f ~/Library/Logs/alloy/stderr.log
-```
+Apple's old `ld` in CLT 15.3 can't resolve branch islands for Alloy's ~500 MB Go binary on arm64. Newer CLT (16.x with `ld-prime`) fixes it, but upgrading CLT needs a ~5 GB install and sudo. Tracking issue: [grafana/homebrew-grafana#134](https://github.com/grafana/homebrew-grafana/issues/134). `spawn-claude` sidesteps the problem by fetching the prebuilt `alloy-darwin-arm64.zip` directly from the upstream GitHub release.
 
 ## Uninstall
 
 ```bash
-./uninstall.sh          # unload + remove LaunchAgent plist only
-./uninstall.sh --purge  # also remove binary, ~/.config/alloy/, and logs
+spawn-claude collector uninstall          # unload + remove LaunchAgent only
+spawn-claude collector uninstall --purge  # also remove binary, ~/.config/alloy/, and logs
 ```
 
-## Next step: Claude Code telemetry
+## Roadmap
 
-Claude Code emits OTLP metrics/traces. Add an `otelcol.receiver.otlp` block to `config.alloy` (gRPC on `:4317`, HTTP on `:4318`), point it at an exporter (Grafana Cloud, local Tempo/Mimir, etc.), then `curl -X POST http://127.0.0.1:12345/-/reload`. Configure Claude Code to send to `http://127.0.0.1:4318` (HTTP) or `:4317` (gRPC).
+- **PR2** — `spawn-claude run [-- claude-args]` that exec's `claude` with the OTLP env vars set to the local collector.
+- **PR3** — Preset registry (`spawn-claude collector configure <signoz-cloud|grafana-cloud|...>`) with secret templating and `alloy fmt` validation. `run --direct` to bypass the local collector.
+- **PR4** — `spawn-claude doctor` end-to-end health check, including a smoke-test trace export.
+- **PR6** — goreleaser pipeline, signed macOS binaries, Homebrew tap.
+
+## Development
+
+```bash
+go build -o spawn-claude .
+go vet ./...
+./spawn-claude --help
+```
+
+## License
+
+MIT — see [LICENSE](LICENSE).

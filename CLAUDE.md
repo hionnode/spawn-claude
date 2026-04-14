@@ -4,30 +4,40 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A small bash-only bundle that installs the prebuilt Grafana Alloy binary as a per-user macOS LaunchAgent. There is no build step, no language toolchain, and no test suite. End goal is a local OTLP collector for Claude Code telemetry — the receiver block hasn't been added to `config.alloy` yet (see README "Next step" section).
+A Go CLI (module `github.com/hionnode/spawn-claude`) that manages a per-user Grafana Alloy LaunchAgent on macOS and — in upcoming releases — will wrap `claude` with OTLP env vars so Claude Code telemetry flows through the local collector to a configurable backend. **macOS / Apple Silicon only.**
 
-## The four files and how they fit
+Pre-1.0. PR1 (this release) ships only the collector lifecycle commands. See `README.md` "Roadmap" for what each subsequent PR adds.
 
-- `install.sh` — guards darwin/arm64, downloads pinned `ALLOY_VERSION` zip from GitHub releases to `~/.local/bin/alloy`, seeds `~/.config/alloy/config.alloy` (only if absent), renders the plist, and `launchctl bootstrap`s it into `gui/$(id -u)`. Polls `http://127.0.0.1:12345/-/ready` for up to 10s.
-- `com.grafana.alloy.plist` — template with `__HOME__` placeholders. `install.sh` substitutes via `sed` at install time; never edit the rendered copy in `~/Library/LaunchAgents/` (it gets overwritten). `KeepAlive` restarts on crash but not on clean exit, which is what makes `launchctl kickstart -k` work as a clean restart.
-- `config.alloy` — placeholder shipped to users. `install.sh` only copies it if no config exists, so user edits in `~/.config/alloy/config.alloy` survive re-runs.
-- `uninstall.sh` — removes the LaunchAgent by default; `--purge` also wipes binary, config, and logs.
-
-## Why prebuilt binary instead of Homebrew
-
-`brew install grafana/grafana/alloy` builds from source, and on this machine's CLT 15.3 the linker fails with "B/BL out of range" on the ~500 MB arm64 binary. Don't switch to brew unless CLT is upgraded to 16.x. See README for the upstream tracking issue.
-
-## Bumping Alloy version
-
-Change `ALLOY_VERSION` at the top of `install.sh`, delete `~/.local/bin/alloy` (the script skips download if the binary exists), and re-run `./install.sh`.
-
-## Verifying changes
+## Build / run / verify
 
 ```bash
-./install.sh                                                  # idempotent; safe to re-run
-launchctl list | grep com.grafana.alloy                       # col 2 = last exit code
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:12345/-/ready
-curl -X POST http://127.0.0.1:12345/-/reload                  # after editing config
-launchctl kickstart -k gui/$(id -u)/com.grafana.alloy         # hard restart
-tail -f ~/Library/Logs/alloy/stderr.log
+go build -o spawn-claude .              # single binary; no external runtime deps beyond alloy itself
+go vet ./...
+./spawn-claude --help
+./spawn-claude collector install        # behaviorally identical to the old install.sh
 ```
+
+No test suite yet. Verification is manual end-to-end: see the "Verification" section of the PR1 plan (or just cycle `install` → `status` → `reload` → `restart` → `uninstall --purge`).
+
+## Architecture (the big picture)
+
+Two layers, with `cmd/` strictly orchestrating `internal/`:
+
+- **`cmd/`** — cobra command tree. One file per subcommand (`collector_install.go`, `collector_status.go`, …). Files here should be ≤100 lines; they parse flags, call into `internal/alloy`, and render output. No business logic.
+- **`internal/alloy/`** — everything that talks to Alloy or launchd. `paths.go` is the single source of truth for every `$HOME`-derived path (nothing else recomputes paths). `service_darwin.go` (build-tagged `//go:build darwin`) wraps `launchctl bootstrap/bootout/kickstart/list`. `download.go` fetches the pinned release zip from GitHub and extracts with `archive/zip` — no shelling out to `unzip`. `ready.go` polls `/-/ready`. `version.go` holds the `DefaultVersion` constant that `--alloy-version` overrides.
+- **`internal/assets/`** — embedded plist template and the `_base.alloy` placeholder config. `fs.go` declares `//go:embed platform/... presets/...`. Must live here (not at module root) because `//go:embed` can't use `..` and `main.go` already owns the root `package main`.
+- **`internal/buildinfo/version.go`** — `var Version = "dev"`, stamped at release time via `-ldflags -X github.com/hionnode/spawn-claude/internal/buildinfo.Version=vX.Y.Z`.
+
+Key invariants:
+
+- `cmd/collector_install.go` must preserve exact behavioral parity with the old bash `install.sh` — specifically: skip download if the binary already exists, preserve an existing `~/.config/alloy/config.alloy`, render `__HOME__` in the plist via `strings.ReplaceAll`, `plutil -lint` before loading, `bootout` (ignore error) then `bootstrap`, poll `/-/ready` for 10s, print last 20 lines of `stderr.log` on timeout.
+- `alloy.Bootout` never returns an error — a missing agent on first install is expected.
+- Quarantine xattr stripping shells out to `xattr -d` (stdlib has no xattr API) and ignores failure, matching the `|| true` in the old `install.sh`.
+
+## Alloy version bump
+
+Edit `internal/alloy/version.go` (`DefaultVersion`). If the upstream zip layout changes, `internal/alloy/download.go::extractAlloyBinary` hardcodes the entry name `alloy-darwin-arm64` and will need updating.
+
+## Historical context
+
+The previous version of this repo was four bash scripts (`install.sh`, `uninstall.sh`, a plist, and a placeholder config). The git history preserves it pre-PR1 if you need to reference it. The Go rewrite exists because the planned CLI surface (telemetry wrapping, vendor presets, doctor) is too large for bash.
