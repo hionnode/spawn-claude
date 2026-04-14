@@ -1,0 +1,62 @@
+version: 2
+
+project_name: spawn-claude
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: spawn-claude
+    main: .
+    binary: spawn-claude
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+    goarch:
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/hionnode/spawn-claude/internal/buildinfo.Version={{ .Version }}
+
+archives:
+  - id: spawn-claude
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^test:"
+      - "^ci:"
+
+release:
+  draft: false
+  prerelease: auto
+
+brews:
+  - name: spawn-claude
+    repository:
+      owner: hionnode
+      name: homebrew-spawn-claude
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/hionnode/spawn-claude"
+    description: "Run Claude Code with OTLP telemetry via a local Grafana Alloy collector"
+    license: MIT
+    install: |
+      bin.install "spawn-claude"
+    test: |
+      system "#{bin}/spawn-claude", "version"

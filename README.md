@@ -4,17 +4,26 @@ A Go CLI for macOS that manages a per-user [Grafana Alloy](https://grafana.com/d
 
 ## Status
 
-Pre-1.0. Working: collector lifecycle, `spawn-claude run` (local + `--direct`), vendor presets for SignOz Cloud and Grafana Cloud, and end-to-end `spawn-claude doctor`. The release pipeline (signed binaries, Homebrew tap) is the last remaining PR — see [Roadmap](#roadmap).
+Pre-1.0 but feature-complete. Working: collector lifecycle, `spawn-claude run` (local + `--direct`), vendor presets (SignOz Cloud, Grafana Cloud), end-to-end `spawn-claude doctor`, and a goreleaser-driven release pipeline with a Homebrew tap and `curl | sh` bootstrap.
 
 Platform: **macOS on Apple Silicon (darwin/arm64) only.**
 
 ## Install
 
+Three options — pick whichever fits your setup:
+
 ```bash
+# 1. Bootstrap from the latest GitHub release (recommended)
+curl -fsSL https://raw.githubusercontent.com/hionnode/spawn-claude/main/install.sh | sh
+
+# 2. Homebrew (requires the tap)
+brew install hionnode/spawn-claude/spawn-claude
+
+# 3. Build from source (requires Go 1.23+)
 go install github.com/hionnode/spawn-claude@latest
 ```
 
-Signed binary releases and a Homebrew tap land with PR6.
+The bootstrap script downloads a signed checksums.txt and verifies the tarball before installing to `$HOME/.local/bin/spawn-claude`. Override the install location with `BIN_DIR=/usr/local/bin sh install.sh`. The release binary is **not Apple-notarized** — if Gatekeeper complains, the install script strips the quarantine xattr; full notarization requires a paid Apple Developer account and is intentionally out of scope.
 
 ## Quickstart
 
@@ -116,7 +125,16 @@ spawn-claude collector uninstall --purge  # also remove binary, ~/.config/alloy/
 - ~~**PR2** — `spawn-claude run`.~~ ✅ shipped
 - ~~**PR3** — Presets, `collector configure`, `run --direct`.~~ ✅ shipped
 - ~~**PR4** — `spawn-claude doctor`.~~ ✅ shipped
-- **PR5** — goreleaser pipeline, signed macOS binaries, Homebrew tap.
+- ~~**PR5** — goreleaser pipeline, Homebrew tap, `install.sh` bootstrap.~~ ✅ shipped
+
+## Releasing
+
+Pushing a tag like `v0.1.0` to `main` triggers `.github/workflows/release.yml`, which runs goreleaser and produces a GitHub release (tarball, checksums) plus a formula PR in [`hionnode/homebrew-spawn-claude`](https://github.com/hionnode/homebrew-spawn-claude). The tap repo must exist and a `HOMEBREW_TAP_GITHUB_TOKEN` secret (a PAT with `repo` scope on the tap) must be configured in the `spawn-claude` repo settings; without it, the brew step fails and the release is incomplete.
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
 
 ## Development
 
