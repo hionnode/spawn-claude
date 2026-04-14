@@ -4,7 +4,7 @@ A Go CLI for macOS that manages a per-user [Grafana Alloy](https://grafana.com/d
 
 ## Status
 
-Pre-1.0. The **collector lifecycle** commands and the **`spawn-claude run`** wrapper are in. Preset-based backend configuration (`configure <vendor>`) lands next — see [Roadmap](#roadmap).
+Pre-1.0. Working: collector lifecycle, `spawn-claude run` (local + `--direct`), and vendor presets for SignOz Cloud and Grafana Cloud. `doctor` and the release pipeline are still pending — see [Roadmap](#roadmap).
 
 Platform: **macOS on Apple Silicon (darwin/arm64) only.**
 
@@ -38,7 +38,34 @@ OTEL_METRIC_EXPORT_INTERVAL=10000
 OTEL_LOGS_EXPORT_INTERVAL=5000
 ```
 
-Confirm ingestion by tailing `spawn-claude collector logs -f` while claude is running. To forward the telemetry to a real backend (SignOz Cloud, Grafana Cloud, …), wait for the preset system in PR3 or hand-edit `~/.config/alloy/config.alloy` and `spawn-claude collector reload`.
+Confirm ingestion by tailing `spawn-claude collector logs -f` while claude is running.
+
+### Forwarding telemetry to a real backend
+
+```bash
+spawn-claude collector configure --list                    # see available presets
+$EDITOR ~/.config/spawn-claude/secrets.env && chmod 600 $_ # drop ingestion creds
+spawn-claude collector configure signoz-cloud              # render + alloy fmt + reload
+```
+
+`configure` reads secrets (KEY=VALUE, shell-style) from `~/.config/spawn-claude/secrets.env`, renders the preset's Alloy config with them, validates via `alloy fmt`, atomically swaps `~/.config/alloy/config.alloy` (backing up the previous one to `.bak`), and `POST /-/reload`s the running collector. The preset templates are embedded in the `spawn-claude` binary; see `internal/assets/presets/*.alloy` in-tree.
+
+Required secrets per preset:
+
+| Preset | Required keys in `~/.config/spawn-claude/secrets.env` |
+|---|---|
+| `signoz-cloud` | `SIGNOZ_ENDPOINT` (e.g. `https://ingest.us.signoz.cloud:443`), `SIGNOZ_INGESTION_KEY` |
+| `grafana-cloud` | `GRAFANA_CLOUD_OTLP_ENDPOINT`, `GRAFANA_CLOUD_OTLP_USERNAME`, `GRAFANA_CLOUD_OTLP_PASSWORD` |
+| `local-debug` | (none — this is the default collector-only config) |
+
+### `run --direct` (bypass the local collector)
+
+```bash
+spawn-claude collector configure signoz-cloud --set-direct   # also writes config.toml
+spawn-claude run --direct -- <claude args>                   # sends OTLP straight to SignOz
+```
+
+`--direct` reads `[direct].vendor` from `~/.config/spawn-claude/config.toml` (override with `--vendor=<preset>`), loads the preset's required secrets, and exports the per-vendor OTLP env block before exec'ing `claude`. No local collector is involved.
 
 ## Commands
 
@@ -50,7 +77,8 @@ Confirm ingestion by tailing `spawn-claude collector logs -f` while claude is ru
 | `spawn-claude collector restart` | `launchctl kickstart -k`, then wait for ready. |
 | `spawn-claude collector reload` | Hot-reload the config via `POST /-/reload` (no process restart). |
 | `spawn-claude collector logs [-f]` | Print `~/Library/Logs/alloy/stderr.log`. `-f` follows. |
-| `spawn-claude run [-- claude-args]` | Exec `claude` with OTLP env vars set to the local collector. Supports `--skip-ready-check` and `--print-env`. |
+| `spawn-claude collector configure <preset>` | Render a preset into `~/.config/alloy/config.alloy`, `alloy fmt` it, atomically swap, hot-reload. `--list` shows options. `--set-direct` also updates `config.toml`. |
+| `spawn-claude run [-- claude-args]` | Exec `claude` with OTLP env vars pointed at the local collector. Flags: `--direct`, `--vendor`, `--skip-ready-check`, `--print-env`. |
 | `spawn-claude version` | Print the spawn-claude version and the default Alloy version. |
 
 ## File layout after install
@@ -85,7 +113,7 @@ spawn-claude collector uninstall --purge  # also remove binary, ~/.config/alloy/
 ## Roadmap
 
 - ~~**PR2** — `spawn-claude run`.~~ ✅ shipped
-- **PR3** — Preset registry (`spawn-claude collector configure <signoz-cloud|grafana-cloud|...>`) with secret templating and `alloy fmt` validation. `run --direct` to bypass the local collector.
+- ~~**PR3** — Presets, `collector configure`, `run --direct`.~~ ✅ shipped
 - **PR4** — `spawn-claude doctor` end-to-end health check, including a smoke-test trace export.
 - **PR5** — goreleaser pipeline, signed macOS binaries, Homebrew tap.
 

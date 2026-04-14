@@ -1,0 +1,29 @@
+// Rendered by `spawn-claude collector configure grafana-cloud`.
+// Forwards OTLP telemetry from Claude Code to Grafana Cloud's OTLP gateway.
+// Credentials come from "Send data → OpenTelemetry (OTLP)" in the Grafana UI.
+
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "127.0.0.1:4317"
+  }
+  http {
+    endpoint = "127.0.0.1:4318"
+  }
+  output {
+    metrics = [otelcol.exporter.otlphttp.grafana.input]
+    logs    = [otelcol.exporter.otlphttp.grafana.input]
+    traces  = [otelcol.exporter.otlphttp.grafana.input]
+  }
+}
+
+otelcol.auth.basic "grafana" {
+  username = "{{ .GRAFANA_CLOUD_OTLP_USERNAME }}"
+  password = "{{ .GRAFANA_CLOUD_OTLP_PASSWORD }}"
+}
+
+otelcol.exporter.otlphttp "grafana" {
+  client {
+    endpoint = "{{ .GRAFANA_CLOUD_OTLP_ENDPOINT }}"
+    auth     = otelcol.auth.basic.grafana.handler
+  }
+}

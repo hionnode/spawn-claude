@@ -1,0 +1,26 @@
+// Rendered by `spawn-claude collector configure signoz-cloud`.
+// Forwards OTLP telemetry from Claude Code to SignOz Cloud.
+// https://signoz.io/docs/claude-code-monitoring/
+
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "127.0.0.1:4317"
+  }
+  http {
+    endpoint = "127.0.0.1:4318"
+  }
+  output {
+    metrics = [otelcol.exporter.otlp.signoz.input]
+    logs    = [otelcol.exporter.otlp.signoz.input]
+    traces  = [otelcol.exporter.otlp.signoz.input]
+  }
+}
+
+otelcol.exporter.otlp "signoz" {
+  client {
+    endpoint = "{{ .SIGNOZ_ENDPOINT }}"
+    headers = {
+      "signoz-ingestion-key" = "{{ .SIGNOZ_INGESTION_KEY }}",
+    }
+  }
+}
