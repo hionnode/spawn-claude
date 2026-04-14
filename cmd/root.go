@@ -12,12 +12,12 @@ var verbose bool
 var rootCmd = &cobra.Command{
 	Use:   "spawn-claude",
 	Short: "Run Claude Code with OTLP telemetry via a local Grafana Alloy collector",
-	Long: `spawn-claude manages a per-user Grafana Alloy collector on macOS and will
-(in upcoming releases) wrap ` + "`claude`" + ` with the OTLP env vars needed to emit
-Claude Code telemetry to a configurable backend.
+	Long: `spawn-claude manages a per-user Grafana Alloy collector on macOS and runs
+` + "`claude`" + ` with the OTLP env vars needed to emit Claude Code telemetry to it.
 
-This release ships only the collector lifecycle commands; see
-` + "`spawn-claude collector --help`" + `.`,
+Quickstart:
+  spawn-claude collector install       # one-time
+  spawn-claude run -- <claude args>    # every time you'd normally run claude`,
 	SilenceUsage:  true,
 	SilenceErrors: false,
 }
