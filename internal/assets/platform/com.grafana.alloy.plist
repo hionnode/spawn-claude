@@ -11,6 +11,7 @@
         <string>run</string>
         <string>--storage.path=__HOME__/.config/alloy/data</string>
         <string>--server.http.listen-addr=127.0.0.1:12345</string>
+        <string>--stability.level=experimental</string>
         <string>__HOME__/.config/alloy/config.alloy</string>
     </array>
 

@@ -46,12 +46,16 @@ OTEL_LOGS_EXPORT_INTERVAL=5000
 
 Confirm ingestion by tailing `spawn-claude collector logs -f` while claude is running.
 
+For a walkthrough of what each command does under the hood — and the exact shell commands to do it manually without `spawn-claude` — see [MANUAL.md](MANUAL.md).
+
 ### Forwarding telemetry to a real backend
+
+> **About Grafana's (and SignOz's) "paste into `/etc/alloy/config.alloy`" prompts.** Both vendors' OTLP connector wizards assume you're running the system-wide Alloy service (Homebrew tap / `.deb` / `.rpm`) which reads from `/etc/alloy/config.alloy` and runs as a root-owned service. `spawn-claude` deliberately diverges: it runs Alloy as a per-user LaunchAgent with config at `~/.config/alloy/config.alloy` so no `sudo` is ever required. **Don't paste the vendor's snippet into `/etc/alloy/config.alloy` by hand.** Drop your ingestion credentials into `~/.config/spawn-claude/secrets.env` and run `spawn-claude collector configure <preset>` — the rendered config is equivalent, validated via `alloy fmt`, and hot-reloaded automatically.
 
 ```bash
 spawn-claude collector configure --list                    # see available presets
 $EDITOR ~/.config/spawn-claude/secrets.env && chmod 600 $_ # drop ingestion creds
-spawn-claude collector configure signoz-cloud              # render + alloy fmt + reload
+spawn-claude collector configure grafana-cloud             # or signoz-cloud
 ```
 
 `configure` reads secrets (KEY=VALUE, shell-style) from `~/.config/spawn-claude/secrets.env`, renders the preset's Alloy config with them, validates via `alloy fmt`, atomically swaps `~/.config/alloy/config.alloy` (backing up the previous one to `.bak`), and `POST /-/reload`s the running collector. The preset templates are embedded in the `spawn-claude` binary; see `internal/assets/presets/*.alloy` in-tree.

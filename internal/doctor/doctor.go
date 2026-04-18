@@ -140,7 +140,7 @@ func checkOTLPPort(ctx context.Context, name, addr string) Result {
 		return Result{
 			Name:   name,
 			Detail: err.Error(),
-			Hint:   "the running config is missing an `otelcol.receiver.otlp` block; try `spawn-claude collector configure local-debug`",
+			Hint:   "the running config is missing an `otelcol.receiver.otlp` block; try `spawn-claude collector configure local-debug` (also happens if ~/.config/alloy/config.alloy is a leftover placeholder from the pre-Go installer)",
 		}
 	}
 	conn.Close()

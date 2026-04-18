@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -78,21 +79,45 @@ func runCollectorInstall(ctx context.Context, version string) error {
 }
 
 func writeConfigIfAbsent(path string) error {
-	if _, err := os.Stat(path); err == nil {
-		slog.Debug("config already exists, preserving", "path", path)
-		return nil
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("stat %s: %w", path, err)
-	}
-	data, err := assets.FS.ReadFile("presets/_base.alloy")
+	base, err := assets.FS.ReadFile("presets/_base.alloy")
 	if err != nil {
 		return fmt.Errorf("read embedded base preset: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+
+	existing, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		if looksLikeBashEraPlaceholder(existing) {
+			bak := path + ".bak"
+			if err := os.Rename(path, bak); err != nil {
+				return fmt.Errorf("back up stale placeholder to %s: %w", bak, err)
+			}
+			fmt.Fprintf(os.Stdout, "replaced stale bash-era placeholder at %s (old file backed up to %s)\n", path, bak)
+			break // fall through to the write below
+		}
+		slog.Debug("config already exists, preserving", "path", path)
+		return nil
+	case !errors.Is(err, fs.ErrNotExist):
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+
+	if err := os.WriteFile(path, base, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	slog.Debug("installed placeholder config", "path", path)
+	slog.Debug("installed base config", "path", path)
 	return nil
+}
+
+// looksLikeBashEraPlaceholder detects the pre-Go install.sh placeholder config
+// that contained only comments and no actual Alloy declarations. The old
+// config.placeholder.alloy was ~165 bytes with a "Paste the config generated"
+// comment and nothing else. Any real Alloy config declares at least one
+// `otelcol.*` block.
+func looksLikeBashEraPlaceholder(data []byte) bool {
+	if len(data) >= 500 {
+		return false
+	}
+	return !bytes.Contains(data, []byte("otelcol."))
 }
 
 func renderPlist(paths alloy.Paths) error {
