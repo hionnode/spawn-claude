@@ -45,18 +45,3 @@ changelog:
 release:
   draft: false
   prerelease: auto
-
-brews:
-  - name: spawn-claude
-    repository:
-      owner: hionnode
-      name: homebrew-spawn-claude
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Formula
-    homepage: "https://github.com/hionnode/spawn-claude"
-    description: "Run Claude Code with OTLP telemetry via a local Grafana Alloy collector"
-    license: MIT
-    install: |
-      bin.install "spawn-claude"
-    test: |
-      system "#{bin}/spawn-claude", "version"
