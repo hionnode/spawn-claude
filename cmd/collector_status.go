@@ -13,7 +13,7 @@ import (
 
 var collectorStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Report whether the LaunchAgent is loaded and the Alloy UI is ready",
+	Short: "Report whether the LaunchDaemon is loaded and the Alloy UI is ready",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		status, err := alloy.Status(ctx)

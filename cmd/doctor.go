@@ -14,7 +14,7 @@ var doctorCmd = &cobra.Command{
 	Short: "Run end-to-end health checks against the installed collector",
 	Long: `doctor runs a battery of checks that verify a spawn-claude install is
 healthy end-to-end: claude is on PATH, the alloy binary is installed, the
-LaunchAgent is loaded and running, the UI /-/ready endpoint responds, and
+LaunchDaemon is loaded and running, the UI /-/ready endpoint responds, and
 the OTLP receiver ports (4317/4318) are accepting connections.
 
 Exits 0 on success, 1 if any check failed.`,

@@ -1,6 +1,6 @@
 # Alloy config cookbook for spawn-claude
 
-This is the reference for authoring and evolving `~/.config/alloy/config.alloy` by hand — when the built-in presets (`local-debug`, `signoz-cloud`, `grafana-cloud`) don't cover what you need, or when a backend's UI hands you a config snippet and you're not sure how it merges with what spawn-claude already runs.
+This is the reference for authoring and evolving `/etc/alloy/config.alloy` by hand — when the built-in presets (`local-debug`, `signoz-cloud`, `grafana-cloud`) don't cover what you need, or when a backend's UI hands you a config snippet and you're not sure how it merges with what spawn-claude already runs.
 
 For the conceptual tour of spawn-claude itself, see [MANUAL.md](MANUAL.md). Upstream Alloy docs live at https://grafana.com/docs/alloy/.
 
@@ -8,20 +8,22 @@ For the conceptual tour of spawn-claude itself, see [MANUAL.md](MANUAL.md). Upst
 
 ## How spawn-claude launches Alloy
 
-The LaunchAgent at `~/Library/LaunchAgents/com.grafana.alloy.plist` runs this exact command (see `internal/assets/platform/com.grafana.alloy.plist`):
+The LaunchDaemon at `/Library/LaunchDaemons/com.grafana.alloy.plist` runs this exact command as root (see `internal/assets/platform/com.grafana.alloy.plist`):
 
 ```
-~/.local/bin/alloy run \
-  --storage.path=~/.config/alloy/data \
+/usr/local/bin/alloy run \
+  --storage.path=/var/lib/alloy/data \
   --server.http.listen-addr=127.0.0.1:12345 \
   --stability.level=experimental \
-  ~/.config/alloy/config.alloy
+  /etc/alloy/config.alloy
 ```
 
 Two things to notice:
 
-- **Config path is `~/.config/alloy/config.alloy`** — the user-scoped path, not the system-wide `/etc/alloy/config.alloy` that Homebrew/`.deb`/`.rpm` installs use. Vendor UIs that say "paste this into `/etc/alloy/config.alloy`" are wrong for you; paste into the user path or use `spawn-claude collector configure`.
+- **Config path is `/etc/alloy/config.alloy`** — the same system-wide path Homebrew / `.deb` / `.rpm` installs use. Vendor UIs that say "paste this into `/etc/alloy/config.alloy`" paste straight in.
 - **`--stability.level=experimental`** is passed globally, so any experimental component (e.g. `otelcol.exporter.debug`) loads. Don't remove this flag unless you know every component in your config is GA-stable.
+
+Writing to `/etc/alloy/config.alloy` requires sudo (root:wheel 0644). Either use `spawn-claude collector configure <preset>` (which prompts for sudo) or hand-edit with `sudo $EDITOR /etc/alloy/config.alloy`.
 
 Reloads are hot. `spawn-claude collector reload` sends `POST http://127.0.0.1:12345/-/reload` to the running process. If the new config is invalid, Alloy keeps serving the old config and the POST returns non-2xx with the parse error. The process is not restarted.
 
@@ -112,17 +114,17 @@ If port 4318 isn't listening, `spawn-claude doctor` fails and no telemetry reach
 | `prometheus.exporter.self` | Exposes Alloy's own internal metrics as a scrape target | For the "Alloy self-monitoring" integration. |
 | `prometheus.scrape` | Scrapes a target and forwards to a receiver | Pairs with `prometheus.exporter.self`. |
 
-Full reference: `~/.local/bin/alloy run --help` lists everything the binary knows about; https://grafana.com/docs/alloy/latest/reference/components/ has per-component docs.
+Full reference: `/usr/local/bin/alloy run --help` lists everything the binary knows about; https://grafana.com/docs/alloy/latest/reference/components/ has per-component docs.
 
 ---
 
 ## Recipes
 
-Drop any of these into `~/.config/alloy/config.alloy`, then `spawn-claude collector reload`. All are complete, standalone configs — not fragments.
+Drop any of these into `/etc/alloy/config.alloy`, then `spawn-claude collector reload`. All are complete, standalone configs — not fragments.
 
 ### 1. Local debug (the default after `collector install`)
 
-Receives OTLP, dumps every payload to `~/Library/Logs/alloy/stderr.log`, ships nothing upstream. Useful for confirming Claude Code is emitting telemetry at all.
+Receives OTLP, dumps every payload to `/var/log/alloy/stderr.log`, ships nothing upstream. Useful for confirming Claude Code is emitting telemetry at all.
 
 ```
 otelcol.receiver.otlp "default" {
@@ -300,7 +302,7 @@ Paste the full `regex = ".."` allow-list from Grafana's UI output — it's long 
 
 ## Secrets: don't hardcode them
 
-Hardcoding `password = "glc_..."` into `~/.config/alloy/config.alloy` works but puts credentials in a world-readable file (`0o644`). Two better paths:
+Hardcoding `password = "glc_..."` into `/etc/alloy/config.alloy` works but puts credentials in a world-readable file (`0o644`). Two better paths:
 
 **Option A — `spawn-claude collector configure <preset>` with `secrets.env`.** Drop credentials into `~/.config/spawn-claude/secrets.env` (chmod 600), then run the appropriate `configure` command. The preset templates live at `internal/assets/presets/*.alloy` and reference keys by Go-template syntax. This is the recommended path for SignOz and Grafana Cloud OTLP flows — see the README.
 
@@ -313,20 +315,20 @@ otelcol.auth.basic "grafana" {
 }
 ```
 
-For these to resolve, the env vars must be visible to the `alloy` process — meaning you add them to the `<key>EnvironmentVariables</key>` dict in `~/Library/LaunchAgents/com.grafana.alloy.plist` and re-bootstrap the agent. Clunky but doesn't require a spawn-claude preset.
+For these to resolve, the env vars must be visible to the `alloy` process — meaning you add them to the `<key>EnvironmentVariables</key>` dict in `/Library/LaunchDaemons/com.grafana.alloy.plist` and re-bootstrap the daemon. Clunky but doesn't require a spawn-claude preset.
 
-Current plist only exports `PATH`; edit it directly if you go this route, then `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.grafana.alloy.plist && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.grafana.alloy.plist`.
+Current plist only exports `PATH`; edit it directly if you go this route, then `sudo launchctl bootout system/com.grafana.alloy && sudo launchctl bootstrap system /Library/LaunchDaemons/com.grafana.alloy.plist`.
 
 ---
 
 ## Authoring workflow
 
 ```bash
-# 1. edit
-$EDITOR ~/.config/alloy/config.alloy
+# 1. edit (sudo: root-owned)
+sudo $EDITOR /etc/alloy/config.alloy
 
-# 2. validate (formats + parses; -w writes back in place)
-~/.local/bin/alloy fmt -w ~/.config/alloy/config.alloy
+# 2. validate (formats + parses; -w writes back in place — sudo to write)
+sudo /usr/local/bin/alloy fmt -w /etc/alloy/config.alloy
 
 # 3. hot-reload (non-2xx = config rejected, old config still running)
 spawn-claude collector reload
@@ -346,9 +348,9 @@ If step 3 fails, read the error body — Alloy returns the parse/validation erro
 
 - **UI at http://127.0.0.1:12345** — component graph (`/graph`), per-component state, live component health, current config (`/config`). Open it. Every component shows its input arguments, current output, and any error.
 - **`/metrics`** — Alloy's own Prometheus metrics. Useful metrics: `otelcol_receiver_accepted_*`, `otelcol_exporter_sent_*`, `otelcol_exporter_send_failed_*`. If "accepted" is increasing but "sent" isn't, the problem is downstream.
-- **`~/Library/Logs/alloy/stderr.log`** — every eval error, every export failure, every reconnect. `tail -F` it during debugging.
-- **`~/.local/bin/alloy fmt`** — fastest way to get a parse error without reloading.
-- **`~/.local/bin/alloy run --dry-run /path/to/config.alloy`** — parses + validates but doesn't start the server. Same effect as `fmt` for validation purposes, plus it resolves component dependencies.
+- **`/var/log/alloy/stderr.log`** — every eval error, every export failure, every reconnect. `tail -F` it during debugging.
+- **`/usr/local/bin/alloy fmt`** — fastest way to get a parse error without reloading.
+- **`/usr/local/bin/alloy run --dry-run /path/to/config.alloy`** — parses + validates but doesn't start the server. Same effect as `fmt` for validation purposes, plus it resolves component dependencies.
 
 ---
 
@@ -431,7 +433,7 @@ GCLOUD_RW_API_KEY="glc_..." nohup ~/alloy-darwin-arm64 run \
 disown
 ```
 
-Survives the current shell closing. Does **not** survive logout or reboot — for that, write a LaunchAgent (see the spawn-claude install flow for a working template at `internal/assets/platform/com.grafana.alloy.plist`; mirror that structure but point `ProgramArguments` at `~/alloy-darwin-arm64` and add `<key>EnvironmentVariables</key>` to inject `GCLOUD_RW_API_KEY`).
+Survives the current shell closing. Does **not** survive logout or reboot — for that, write a LaunchDaemon (see the spawn-claude install flow for a working template at `internal/assets/platform/com.grafana.alloy.plist`; mirror that structure but add `<key>EnvironmentVariables</key>` to inject `GCLOUD_RW_API_KEY`). Or just use `spawn-claude collector install` — it already gives you a LaunchDaemon at `/Library/LaunchDaemons/com.grafana.alloy.plist` with `/etc/alloy/config.alloy` wired in.
 
 ### Verify
 
@@ -449,6 +451,8 @@ The config `install-macos-binary.sh` downloads is an **Alloy-self-monitoring-onl
 2. Abandon this install path and run `spawn-claude collector configure grafana-cloud`, which renders a config with OTLP built in.
 
 The two paths can't coexist on one Alloy process — same binary, same `:12345` port. Pick one.
+
+If you go with option 1 (keep Grafana's config) AND let `spawn-claude collector install` manage the LaunchDaemon, see [GRAFANA-CLOUD.md](GRAFANA-CLOUD.md) for the env-inheritance fix — the `sys.env("GCLOUD_RW_API_KEY")` reference in Grafana's config won't resolve under launchd without an extra PlistBuddy step.
 
 ---
 
@@ -580,6 +584,6 @@ If either the Prom or the Loki query returns no series / no log lines, walk back
 
 **Presets (`spawn-claude collector configure <name>`)** — use when one of the built-in backends (SignOz Cloud OTLP, Grafana Cloud OTLP gateway, local debug) matches your target. Credentials come from `~/.config/spawn-claude/secrets.env`. Config is validated via `alloy fmt` before swap. `.bak` is kept. This is the low-risk path.
 
-**Hand-edit `~/.config/alloy/config.alloy`** — use when you need something the presets don't cover: multiple backends at once, Prometheus remote_write instead of OTLP, Tempo for traces and OTLP for metrics, relabeling, processors, routing connectors, the self-monitoring integration. Accept that you own the file now and `spawn-claude collector configure` will overwrite it.
+**Hand-edit `/etc/alloy/config.alloy`** — use when you need something the presets don't cover: multiple backends at once, Prometheus remote_write instead of OTLP, Tempo for traces and OTLP for metrics, relabeling, processors, routing connectors, the self-monitoring integration. Accept that you own the file now and `spawn-claude collector configure` will overwrite it.
 
 If you write a hand-edited config you want to reuse across machines, consider adding it as a preset in `internal/assets/presets/` and opening a PR. That way future you gets the validation + secrets + hot-reload story for free.

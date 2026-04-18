@@ -12,7 +12,7 @@ import (
 
 var collectorRestartCmd = &cobra.Command{
 	Use:   "restart",
-	Short: "Hard-restart the LaunchAgent (launchctl kickstart -k) and wait for /-/ready",
+	Short: "Hard-restart the LaunchDaemon (launchctl kickstart -k) and wait for /-/ready",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if err := alloy.Kickstart(ctx); err != nil {

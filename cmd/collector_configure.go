@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -26,16 +25,17 @@ var (
 
 var collectorConfigureCmd = &cobra.Command{
 	Use:   "configure [preset]",
-	Short: "Render a preset (signoz-cloud | grafana-cloud | local-debug) into ~/.config/alloy/config.alloy",
-	Long: `configure writes ~/.config/alloy/config.alloy from one of the built-in
+	Short: "Render a preset (signoz-cloud | grafana-cloud | local-debug) into /etc/alloy/config.alloy",
+	Long: `configure writes /etc/alloy/config.alloy from one of the built-in
 presets, substituting required secrets from ~/.config/spawn-claude/secrets.env.
+Requires sudo because /etc/alloy is root-owned.
 
 Use --list to see every available preset. Use --set-direct to also update
 [direct].vendor in ~/.config/spawn-claude/config.toml so that
 ` + "`spawn-claude run --direct`" + ` defaults to the same vendor.
 
 The existing config.alloy is backed up to config.alloy.bak before the
-rename. After writing, the config is validated via ` + "`alloy fmt`" + ` and then
+install. After writing, the config is validated via ` + "`alloy fmt`" + ` and then
 hot-reloaded via POST /-/reload (both can be skipped).`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -88,29 +88,38 @@ func runConfigure(ctx context.Context, name string) error {
 		return err
 	}
 
-	stagePath := alloyPaths.ConfigFile + ".new"
-	if err := os.MkdirAll(filepath.Dir(stagePath), 0o755); err != nil {
+	stage, err := os.CreateTemp("", "spawn-claude-config-*.alloy")
+	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(stagePath, rendered, 0o644); err != nil {
+	stagePath := stage.Name()
+	defer os.Remove(stagePath)
+	if _, err := stage.Write(rendered); err != nil {
+		stage.Close()
+		return err
+	}
+	if err := stage.Close(); err != nil {
 		return err
 	}
 
 	if !configureSkipValidate {
 		if err := validateAlloyConfig(ctx, alloyPaths.BinPath, stagePath); err != nil {
-			_ = os.Remove(stagePath)
 			return err
 		}
 	}
 
-	if _, err := os.Stat(alloyPaths.ConfigFile); err == nil {
-		bak := alloyPaths.ConfigFile + ".bak"
-		if err := os.Rename(alloyPaths.ConfigFile, bak); err != nil {
-			return fmt.Errorf("backup existing config to %s: %w", bak, err)
-		}
-	}
-	if err := os.Rename(stagePath, alloyPaths.ConfigFile); err != nil {
-		return fmt.Errorf("move %s into place: %w", stagePath, err)
+	bak := alloyPaths.ConfigFile + ".bak"
+	script := fmt.Sprintf(
+		"set -e\n"+
+			"mkdir -p %q\n"+
+			"if [ -f %q ]; then cp %q %q; fi\n"+
+			"install -o root -g wheel -m 0644 %q %q\n",
+		alloyPaths.ConfigDir,
+		alloyPaths.ConfigFile, alloyPaths.ConfigFile, bak,
+		stagePath, alloyPaths.ConfigFile,
+	)
+	if err := alloy.SudoShell(ctx, script); err != nil {
+		return err
 	}
 	fmt.Printf("wrote %s (preset %q)\n", alloyPaths.ConfigFile, preset.Name)
 

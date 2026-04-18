@@ -7,12 +7,12 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>__HOME__/.local/bin/alloy</string>
+        <string>/usr/local/bin/alloy</string>
         <string>run</string>
-        <string>--storage.path=__HOME__/.config/alloy/data</string>
+        <string>--storage.path=/var/lib/alloy/data</string>
         <string>--server.http.listen-addr=127.0.0.1:12345</string>
         <string>--stability.level=experimental</string>
-        <string>__HOME__/.config/alloy/config.alloy</string>
+        <string>/etc/alloy/config.alloy</string>
     </array>
 
     <key>RunAtLoad</key>
@@ -29,16 +29,19 @@
     <key>ThrottleInterval</key>
     <integer>10</integer>
 
+    <key>WorkingDirectory</key>
+    <string>/var/lib/alloy</string>
+
     <key>StandardOutPath</key>
-    <string>__HOME__/Library/Logs/alloy/stdout.log</string>
+    <string>/var/log/alloy/stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>__HOME__/Library/Logs/alloy/stderr.log</string>
+    <string>/var/log/alloy/stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
 
     <key>ProcessType</key>

@@ -3,3 +3,9 @@
 *.test
 *.out
 .DS_Store
+
+# Local development artifacts — the pre-migration hand-run binary,
+# its zip, and the default WAL dir when running `alloy` from CWD.
+/alloy-darwin-arm64
+/alloy-darwin-arm64.zip
+/data-alloy/

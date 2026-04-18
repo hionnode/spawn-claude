@@ -1,8 +1,8 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -13,7 +13,7 @@ var uninstallPurge bool
 
 var collectorUninstallCmd = &cobra.Command{
 	Use:   "uninstall",
-	Short: "Stop the LaunchAgent and remove the plist (use --purge to also wipe binary, config, and logs)",
+	Short: "Bootout the LaunchDaemon and remove the plist + binary (use --purge to also wipe config, data, and logs)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		paths, err := alloy.ResolvePaths()
@@ -21,31 +21,23 @@ var collectorUninstallCmd = &cobra.Command{
 			return err
 		}
 
-		_ = alloy.Bootout(ctx, paths.AgentPath)
-		if err := os.Remove(paths.AgentPath); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove %s: %w", paths.AgentPath, err)
+		var b bytes.Buffer
+		fmt.Fprintf(&b, "launchctl bootout system/%s 2>/dev/null || true\n", alloy.Label)
+		fmt.Fprintf(&b, "rm -f %q %q\n", paths.AgentPath, paths.BinPath)
+		if uninstallPurge {
+			fmt.Fprintf(&b, "rm -rf %q %q %q\n", paths.ConfigDir, "/var/lib/alloy", paths.LogDir)
+		}
+		if err := alloy.SudoShell(ctx, b.String()); err != nil {
+			return err
 		}
 
 		if !uninstallPurge {
-			fmt.Println("LaunchAgent removed. Preserved:")
-			fmt.Printf("  binary: %s\n", paths.BinPath)
+			fmt.Println("LaunchDaemon + binary removed. Preserved:")
 			fmt.Printf("  config: %s\n", paths.ConfigDir)
+			fmt.Printf("  data:   %s\n", paths.DataDir)
 			fmt.Printf("  logs:   %s\n", paths.LogDir)
 			fmt.Println("Pass --purge to remove those too.")
 			return nil
-		}
-
-		for _, target := range []struct {
-			path   string
-			remove func(string) error
-		}{
-			{paths.BinPath, os.Remove},
-			{paths.ConfigDir, os.RemoveAll},
-			{paths.LogDir, os.RemoveAll},
-		} {
-			if err := target.remove(target.path); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("remove %s: %w", target.path, err)
-			}
 		}
 		fmt.Println("done. everything removed.")
 		return nil
@@ -53,6 +45,6 @@ var collectorUninstallCmd = &cobra.Command{
 }
 
 func init() {
-	collectorUninstallCmd.Flags().BoolVar(&uninstallPurge, "purge", false, "also remove the alloy binary, config dir, and logs")
+	collectorUninstallCmd.Flags().BoolVar(&uninstallPurge, "purge", false, "also remove /etc/alloy, /var/lib/alloy, and /var/log/alloy")
 	collectorCmd.AddCommand(collectorUninstallCmd)
 }

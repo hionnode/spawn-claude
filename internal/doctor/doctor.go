@@ -45,7 +45,7 @@ func Run(ctx context.Context) []Result {
 		checkClaudeOnPath(),
 		checkAlloyBinary(paths),
 		checkConfigFile(paths),
-		checkLaunchAgent(ctx),
+		checkLaunchDaemon(ctx),
 		checkReady(ctx),
 		checkOTLPPort(ctx, "OTLP HTTP receiver (:4318)", "127.0.0.1:4318"),
 		checkOTLPPort(ctx, "OTLP gRPC receiver (:4317)", "127.0.0.1:4317"),
@@ -97,26 +97,26 @@ func checkConfigFile(paths alloy.Paths) Result {
 	return Result{Name: "collector config present", OK: true, Detail: fmt.Sprintf("%s (%d bytes)", paths.ConfigFile, info.Size())}
 }
 
-func checkLaunchAgent(ctx context.Context) Result {
+func checkLaunchDaemon(ctx context.Context) Result {
 	s, err := alloy.Status(ctx)
 	if err != nil {
-		return Result{Name: "LaunchAgent loaded", Detail: err.Error(), Hint: "run `spawn-claude collector install`"}
+		return Result{Name: "LaunchDaemon loaded", Detail: err.Error(), Hint: "run `spawn-claude collector install`"}
 	}
 	if !s.Loaded {
 		return Result{
-			Name:   "LaunchAgent loaded",
+			Name:   "LaunchDaemon loaded",
 			Detail: "launchctl doesn't know about " + alloy.Label,
 			Hint:   "run `spawn-claude collector install`",
 		}
 	}
 	if !s.Running {
 		return Result{
-			Name:   "LaunchAgent loaded",
+			Name:   "LaunchDaemon loaded",
 			Detail: fmt.Sprintf("loaded but not running (last exit %d)", s.LastExit),
 			Hint:   "run `spawn-claude collector restart` and check `spawn-claude collector logs`",
 		}
 	}
-	return Result{Name: "LaunchAgent loaded", OK: true, Detail: fmt.Sprintf("PID %d, last exit %d", s.PID, s.LastExit)}
+	return Result{Name: "LaunchDaemon loaded", OK: true, Detail: fmt.Sprintf("PID %d, last exit %d", s.PID, s.LastExit)}
 }
 
 func checkReady(parent context.Context) Result {
@@ -144,7 +144,7 @@ func checkOTLPPort(ctx context.Context, name, addr string) Result {
 		return Result{
 			Name:   name,
 			Detail: err.Error(),
-			Hint:   "the running config is missing an `otelcol.receiver.otlp` block; try `spawn-claude collector configure local-debug` (also happens if ~/.config/alloy/config.alloy is a leftover placeholder from the pre-Go installer)",
+			Hint:   "the running config is missing an `otelcol.receiver.otlp` block; try `spawn-claude collector configure local-debug`",
 		}
 	}
 	conn.Close()

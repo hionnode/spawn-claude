@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
@@ -15,8 +14,10 @@ func releaseURL(version string) string {
 	return fmt.Sprintf("https://github.com/grafana/alloy/releases/download/%s/alloy-darwin-arm64.zip", version)
 }
 
-// EnsureBinary downloads and installs the pinned Alloy binary if it isn't
-// already present at paths.BinPath. Mirrors install.sh L28-L40.
+// EnsureBinary downloads and installs the pinned Alloy binary at
+// /usr/local/bin/alloy if it isn't already present. Extraction happens in a
+// user-writable tempdir; the final copy into /usr/local/bin and ownership fix
+// require sudo and are funneled through SudoShell.
 func EnsureBinary(ctx context.Context, paths Paths, version string) error {
 	if info, err := os.Stat(paths.BinPath); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
 		return nil
@@ -38,18 +39,12 @@ func EnsureBinary(ctx context.Context, paths Paths, version string) error {
 		return fmt.Errorf("extract alloy zip: %w", err)
 	}
 
-	if err := os.Rename(extracted, paths.BinPath); err != nil {
-		if err := copyFile(extracted, paths.BinPath); err != nil {
-			return fmt.Errorf("install binary to %s: %w", paths.BinPath, err)
-		}
-	}
-	if err := os.Chmod(paths.BinPath, 0o755); err != nil {
-		return fmt.Errorf("chmod %s: %w", paths.BinPath, err)
-	}
-
-	// Strip quarantine xattr; ignore failure (matches install.sh `|| true`).
-	_ = exec.CommandContext(ctx, "xattr", "-d", "com.apple.quarantine", paths.BinPath).Run()
-	return nil
+	script := fmt.Sprintf(
+		"install -o root -g wheel -m 0755 %q %q && "+
+			"xattr -d com.apple.quarantine %q 2>/dev/null || true",
+		extracted, paths.BinPath, paths.BinPath,
+	)
+	return SudoShell(ctx, script)
 }
 
 func downloadFile(ctx context.Context, url, dst string) error {
@@ -111,20 +106,5 @@ func writeZipFile(zf *zip.File, dst string) error {
 	}
 	defer out.Close()
 	_, err = io.Copy(out, rc)
-	return err
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	_, err = io.Copy(out, in)
 	return err
 }

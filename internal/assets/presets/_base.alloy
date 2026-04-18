@@ -1,6 +1,6 @@
 // spawn-claude default collector config.
 // Receives OTLP from Claude Code on :4317 (gRPC) and :4318 (HTTP) and writes
-// every payload to the Alloy stderr log at ~/Library/Logs/alloy/stderr.log.
+// every payload to the Alloy stderr log at /var/log/alloy/stderr.log.
 //
 // Swap this file for a vendor-specific preset with:
 //

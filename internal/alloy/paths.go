@@ -1,20 +1,19 @@
 package alloy
 
-import (
-	"fmt"
-	"os"
-	"path/filepath"
-)
-
 const (
-	Label   = "com.grafana.alloy"
-	UIBase  = "http://127.0.0.1:12345"
-	ReadyURL = UIBase + "/-/ready"
+	Label     = "com.grafana.alloy"
+	UIBase    = "http://127.0.0.1:12345"
+	ReadyURL  = UIBase + "/-/ready"
 	ReloadURL = UIBase + "/-/reload"
 )
 
+// Paths holds every filesystem location the collector touches. Values are
+// system-wide (/etc, /usr/local/bin, /var/lib, /var/log, /Library/LaunchDaemons)
+// so the install matches Homebrew / .deb / .rpm conventions and vendor UIs
+// that tell users to "paste into /etc/alloy/config.alloy" just work.
+//
+// Writes to these paths require sudo; see internal/alloy/sudo.go.
 type Paths struct {
-	Home       string
 	BinDir     string
 	BinPath    string
 	ConfigDir  string
@@ -28,33 +27,16 @@ type Paths struct {
 }
 
 func ResolvePaths() (Paths, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return Paths{}, fmt.Errorf("resolve home directory: %w", err)
-	}
-	configDir := filepath.Join(home, ".config", "alloy")
-	logDir := filepath.Join(home, "Library", "Logs", "alloy")
-	agentDir := filepath.Join(home, "Library", "LaunchAgents")
 	return Paths{
-		Home:       home,
-		BinDir:     filepath.Join(home, ".local", "bin"),
-		BinPath:    filepath.Join(home, ".local", "bin", "alloy"),
-		ConfigDir:  configDir,
-		ConfigFile: filepath.Join(configDir, "config.alloy"),
-		DataDir:    filepath.Join(configDir, "data"),
-		LogDir:     logDir,
-		StderrLog:  filepath.Join(logDir, "stderr.log"),
-		StdoutLog:  filepath.Join(logDir, "stdout.log"),
-		AgentDir:   agentDir,
-		AgentPath:  filepath.Join(agentDir, Label+".plist"),
+		BinDir:     "/usr/local/bin",
+		BinPath:    "/usr/local/bin/alloy",
+		ConfigDir:  "/etc/alloy",
+		ConfigFile: "/etc/alloy/config.alloy",
+		DataDir:    "/var/lib/alloy/data",
+		LogDir:     "/var/log/alloy",
+		StderrLog:  "/var/log/alloy/stderr.log",
+		StdoutLog:  "/var/log/alloy/stdout.log",
+		AgentDir:   "/Library/LaunchDaemons",
+		AgentPath:  "/Library/LaunchDaemons/" + Label + ".plist",
 	}, nil
-}
-
-func (p Paths) EnsureDirs() error {
-	for _, d := range []string{p.BinDir, p.DataDir, p.LogDir, p.AgentDir} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			return fmt.Errorf("mkdir %s: %w", d, err)
-		}
-	}
-	return nil
 }
