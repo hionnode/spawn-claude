@@ -12,7 +12,7 @@ Platform: **macOS on Apple Silicon (darwin/arm64) only.**
 
 ## Contents
 
-- [Setup](#setup) — install spawn-claude → set up & configure Alloy (Grafana Cloud UI path or spawn-claude presets) → run claude
+- [Setup](#setup) — install spawn-claude → set up Alloy via Grafana Cloud's Collector Setup UI → run claude
 - [Further reading](#further-reading) — architecture, Alloy cookbook, Grafana Cloud gotchas
 - [Commands](#commands)
 - [File layout after install](#file-layout-after-install)
@@ -38,16 +38,9 @@ If you have Go 1.23+ and prefer to build from source:
 go install github.com/hionnode/spawn-claude@latest
 ```
 
-### 2. Set up Alloy (prerequisite for everything else)
+### 2. Set up Alloy via Grafana Cloud's Collector Setup UI
 
-Two paths — pick the one that matches your backend:
-
-- **Grafana Cloud users** → [2a](#2a-grafana-cloud-via-the-collector-setup-ui). Use Grafana's Collector Setup UI to generate a config with *your* stack's hosted metrics/logs URLs, instance IDs, and RW token baked in, then let spawn-claude patch in the two Claude-specific pieces Grafana's config is missing.
-- **SignOz Cloud / custom / local-debug** → [2b](#2b-signoz-custom-local-debug-via-spawn-claude-presets). One-command `collector install` + `configure <preset>` with secrets in `~/.config/spawn-claude/secrets.env`.
-
-**Why two paths?** Neither install is complete on its own. `spawn-claude collector install` doesn't know your Grafana Cloud hosted URLs or instance IDs — it writes a local-debug default. Grafana's `install-macos-binary.sh` writes a *self-monitoring-only* config with no OTLP receiver, routes metrics through a Prometheus bridge that silently drops Delta-temporality sums (which is every `claude_code_*` counter), and leaves Alloy as a hand-run process that dies on reboot. The combined flow below lets Grafana own what it's good at (URLs + tokens) and spawn-claude fill the Claude-specific gaps.
-
-#### 2a. Grafana Cloud (via the Collector Setup UI)
+Neither install approach is complete on its own. `spawn-claude collector install` doesn't know your Grafana Cloud hosted URLs or instance IDs — it writes a local-debug default. Grafana's `install-macos-binary.sh` writes a *self-monitoring-only* config with no OTLP receiver, routes metrics through a Prometheus bridge that silently drops Delta-temporality sums (which is every `claude_code_*` counter), and leaves Alloy as a hand-run process that dies on reboot. The flow below lets Grafana own what it's good at (URLs + tokens) and spawn-claude fill the Claude-specific gaps.
 
 **Step 1 — generate the install commands in Grafana's UI.**
 
@@ -121,34 +114,7 @@ spawn-claude collector status
 
 Configure validation via a data round-trip: run `spawn-claude run -- -p "hello"` (next section) and then, ~30s later, in Grafana Cloud's Explore view, query Prometheus for `count by (__name__) ({__name__=~"claude_code.*"})`. You should see names like `claude_code_token_usage_total`, `claude_code_session_count_total`. If it's empty, `spawn-claude doctor` + `spawn-claude collector logs -f` will tell you where the break is.
 
-#### 2b. SignOz, custom, local-debug (via spawn-claude presets)
-
-The "batteries included" path for everything that isn't Grafana Cloud's Prom+Loki setup. `spawn-claude collector install` writes a default local-debug config and registers the LaunchDaemon; `collector configure <preset>` then swaps in your vendor's OTLP block.
-
-```bash
-spawn-claude collector install                             # one sudo prompt, ~30s. Installs the alloy binary,
-                                                           # writes /etc/alloy/config.alloy (local-debug),
-                                                           # loads the LaunchDaemon.
-
-spawn-claude collector configure --list                    # see available presets
-$EDITOR ~/.config/spawn-claude/secrets.env && chmod 600 $_ # drop your vendor creds (KEY=VALUE, shell-style)
-spawn-claude collector configure signoz-cloud              # or local-debug, or grafana-cloud (OTLP gateway — see note below)
-spawn-claude collector status                              # verify
-```
-
-`configure` reads secrets from `~/.config/spawn-claude/secrets.env`, renders the preset's Alloy config with them, validates via `alloy fmt`, atomically installs `/etc/alloy/config.alloy` (backing up the previous one to `.bak`) under `sudo`, and `POST /-/reload`s the running collector. No daemon restart. Preset templates are embedded in the binary; see `internal/assets/presets/*.alloy`.
-
-Required secrets per preset:
-
-| Preset | Required keys in `~/.config/spawn-claude/secrets.env` |
-|---|---|
-| `signoz-cloud` | `SIGNOZ_ENDPOINT` (e.g. `https://ingest.us.signoz.cloud:443`), `SIGNOZ_INGESTION_KEY` |
-| `grafana-cloud` | `GRAFANA_CLOUD_OTLP_ENDPOINT`, `GRAFANA_CLOUD_OTLP_USERNAME`, `GRAFANA_CLOUD_OTLP_PASSWORD` |
-| `local-debug` | (none — collector-only config; dumps every OTLP payload to `/var/log/alloy/stderr.log`) |
-
-Note: the `grafana-cloud` preset here uses Grafana's **OTLP gateway** (`otelcol.exporter.otlphttp`, Delta-tolerant) rather than the Prometheus+Loki bridge. Most Grafana Cloud users onboarding from scratch via Grafana's UI wizard want path [2a](#2a-grafana-cloud-via-the-collector-setup-ui) instead — it matches what the UI hands you. Use this preset only if you prefer the OTLP gateway or are running a pure-OTLP stack.
-
-Hand-writing a config the presets don't cover? See [ALLOY.md](ALLOY.md) for 5 copy-paste recipes, a component reference, and the full data-flow diagram.
+Hand-writing a config beyond what `add-claude-otlp.sh` generates? See [ALLOY.md](ALLOY.md) for 5 copy-paste recipes, a component reference, and the full data-flow diagram.
 
 ### 3. Run claude with telemetry
 
