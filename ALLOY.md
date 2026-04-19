@@ -2,7 +2,7 @@
 
 This is the reference for authoring and evolving `/etc/alloy/config.alloy` by hand — when the built-in presets (`local-debug`, `signoz-cloud`, `grafana-cloud`) don't cover what you need, or when a backend's UI hands you a config snippet and you're not sure how it merges with what spawn-claude already runs.
 
-For the conceptual tour of spawn-claude itself, see [MANUAL.md](MANUAL.md). Upstream Alloy docs live at https://grafana.com/docs/alloy/.
+Start at [README.md](README.md) if you just want to install spawn-claude and get telemetry flowing with a built-in preset; this doc is for authoring or evolving the Alloy config by hand. For the conceptual tour of spawn-claude's own plumbing, see [MANUAL.md](MANUAL.md). Upstream Alloy docs live at https://grafana.com/docs/alloy/.
 
 ---
 

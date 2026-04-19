@@ -3,12 +3,18 @@
 # remove-alloy.sh — nuke every trace of Grafana Alloy from this Mac.
 #
 # Covers:
-#   - spawn-claude's user-scoped LaunchAgent + binary + config + data + logs
+#   - spawn-claude's system-scoped LaunchDaemon at /Library/LaunchDaemons
+#     (plus any legacy user-scoped LaunchAgent from the pre-migration era)
 #   - Homebrew's grafana/grafana/alloy formula (and brew services entry)
 #   - Hand-installed binaries in /usr/local/bin, /opt/homebrew/bin, /usr/bin
-#   - System-scoped LaunchDaemons at /Library/LaunchDaemons
+#   - Any other LaunchDaemons at /Library/LaunchDaemons pointing at alloy
 #   - Config/WAL/log directories at ~/.config, /etc, /opt/homebrew/etc,
 #     /var/lib, /var/log, ~/Library/Logs
+#
+# This is the "nuclear" cleanup. `spawn-claude collector uninstall --purge`
+# only removes what spawn-claude itself installed; this script also catches
+# hand-run binaries, Homebrew formulas, Grafana-onboarding leftovers, and
+# any Alloy config dirs left behind by prior installs.
 #
 # Does NOT touch:
 #   - spawn-claude itself (binary at ~/.local/bin/spawn-claude)
