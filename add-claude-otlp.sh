@@ -90,9 +90,21 @@ otelcol.receiver.otlp "claude_code" {
     endpoint = "127.0.0.1:4318"
   }
   output {
-    metrics = [otelcol.exporter.prometheus.claude_code.input]
+    metrics = [otelcol.processor.deltatocumulative.claude_code.input]
     logs    = [otelcol.exporter.loki.claude_code.input]
     traces  = []
+  }
+}
+
+// Claude Code's OTel SDK emits monotonic sums with Delta temporality.
+// otelcol.exporter.prometheus silently drops Delta sums during OTel->Prom
+// conversion because Prometheus remote_write only stores cumulative.
+// This processor converts Delta -> Cumulative so claude_code_*_total
+// series actually reach Grafana Cloud. Alloy must be run with
+// --stability.level=experimental (or public-preview) for this component.
+otelcol.processor.deltatocumulative "claude_code" {
+  output {
+    metrics = [otelcol.exporter.prometheus.claude_code.input]
   }
 }
 

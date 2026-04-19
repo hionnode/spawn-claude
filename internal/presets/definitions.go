@@ -40,6 +40,7 @@ var signozCloud = Preset{
 			"OTEL_EXPORTER_OTLP_HEADERS=signoz-ingestion-key=" + s[KeySignozIngestionKey],
 			"OTEL_METRIC_EXPORT_INTERVAL=10000",
 			"OTEL_LOGS_EXPORT_INTERVAL=5000",
+			"OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative",
 		}, nil
 	},
 }
@@ -65,6 +66,7 @@ var grafanaCloud = Preset{
 			"OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic " + basicAuth(s[KeyGrafanaUsername], s[KeyGrafanaPassword]),
 			"OTEL_METRIC_EXPORT_INTERVAL=10000",
 			"OTEL_LOGS_EXPORT_INTERVAL=5000",
+			"OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative",
 		}, nil
 	},
 }

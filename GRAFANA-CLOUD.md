@@ -171,6 +171,62 @@ password = local.file.gcloud_key.content
 
 Reload (`spawn-claude collector reload`) and the daemon picks up the new config without needing the env-var injection at all. You can remove the PlistBuddy-injected entry afterward.
 
+## Related gotcha: Delta temporality silently drops metrics
+
+If your `/etc/alloy/config.alloy` routes Claude Code metrics via the Prometheus bridge (i.e. `otelcol.exporter.prometheus` → `prometheus.remote_write`, which is what Grafana's onboarding script sets up and what `add-claude-otlp.sh` adds), you'll hit a second, subtler problem *after* fixing auth: **every `claude_code_*` metric is silently dropped before it reaches Grafana.** The pipeline reports success (`samples_failed_total = 0`), Alloy's receiver counters climb, and yet a PromQL query for `{__name__=~"claude_code.*"}` returns "No data."
+
+### Root cause
+
+Claude Code's OpenTelemetry SDK emits monotonic sums (`claude_code.session.count`, `claude_code.active_time.total`, `claude_code.token.usage`, etc.) with `AggregationTemporality: Delta`. Each data point represents the delta since the last export, not a running total.
+
+Prometheus can only store **cumulative** counters. Alloy's `otelcol.exporter.prometheus` component does the OTel → Prometheus conversion and — by design — **silently drops any Sum whose `IsMonotonic=true` arrives with Delta temporality**. No counter increments, no error log line. Just nothing.
+
+You can see this directly if you fan out the OTLP receiver to an `otelcol.exporter.debug` and tail `/var/log/alloy/stderr.log`: every Claude metric's `Descriptor` block says `AggregationTemporality: Delta`.
+
+Setting `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative` in the environment (the standard OTel SDK opt-out) does **not** help — Claude Code's SDK currently hardcodes Delta temporality for monotonic sums and ignores the env var. `spawn-claude run` sets the env var anyway for belt-and-suspenders, but the load-bearing fix is on the collector side.
+
+### The fix: insert `otelcol.processor.deltatocumulative`
+
+Route the OTLP receiver's metrics through a `deltatocumulative` processor before the Prom exporter:
+
+```hcl
+otelcol.receiver.otlp "claude_code" {
+  grpc { endpoint = "127.0.0.1:4317" }
+  http { endpoint = "127.0.0.1:4318" }
+  output {
+    metrics = [otelcol.processor.deltatocumulative.claude_code.input]
+    logs    = [otelcol.exporter.loki.claude_code.input]
+    traces  = []
+  }
+}
+
+otelcol.processor.deltatocumulative "claude_code" {
+  output {
+    metrics = [otelcol.exporter.prometheus.claude_code.input]
+  }
+}
+
+otelcol.exporter.prometheus "claude_code" {
+  forward_to = [prometheus.remote_write.metrics_service.receiver]
+}
+```
+
+The processor keeps per-series state in memory: for each unique (metric name + resource attributes + data-point attributes) tuple, it tracks the running total and converts each arriving Delta point into a Cumulative one by adding to the total. State survives config reloads but is lost on daemon restart (first post-restart point is effectively discarded as the baseline).
+
+`add-claude-otlp.sh` in this repo already includes the processor block — if you ran the old version of that script (before this fix), update your config and hot-reload:
+
+```bash
+# After editing /etc/alloy/config.alloy to add the processor block:
+sudo /usr/local/bin/alloy fmt -w /etc/alloy/config.alloy
+spawn-claude collector reload
+```
+
+`otelcol.processor.deltatocumulative` is a public-preview component in Alloy, which is why the LaunchDaemon runs with `--stability.level=experimental` by default (covers both public-preview and experimental).
+
+### Why SignOz users don't hit this
+
+SignOz's OTLP ingest accepts Delta directly (ClickHouse stores both temporalities). The `spawn-claude collector configure signoz-cloud` preset forwards raw OTLP via `otelcol.exporter.otlp`, bypassing the Prometheus bridge entirely — so Delta metrics flow through untouched. Grafana Cloud's **native OTLP gateway** (`grafana-cloud` preset, using `otelcol.exporter.otlphttp`) also accepts Delta. The problem is specific to the `otelcol.exporter.prometheus → prometheus.remote_write` path, which is what Grafana's default onboarding script and most hand-written configs use.
+
 ## Related reading
 
 - [ALLOY.md](ALLOY.md) § "Grafana Cloud onboarding deep-dive" — more on what `install-macos-binary.sh` actually does (and doesn't do), and why its final command references the wrong binary name.

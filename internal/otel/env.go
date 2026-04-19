@@ -26,6 +26,14 @@ func LocalEnv() []string {
 		"OTEL_EXPORTER_OTLP_ENDPOINT=" + LocalEndpoint,
 		"OTEL_METRIC_EXPORT_INTERVAL=10000",
 		"OTEL_LOGS_EXPORT_INTERVAL=5000",
+		// Claude's OTel SDK hardcodes Delta temporality for monotonic sums
+		// and currently ignores this env var. We set it anyway as
+		// belt-and-suspenders in case a future Claude version honors it.
+		// The load-bearing fix is an `otelcol.processor.deltatocumulative`
+		// in the Alloy pipeline whenever metrics route through
+		// `otelcol.exporter.prometheus` → `prometheus.remote_write`; see
+		// GRAFANA-CLOUD.md § "Delta temporality silently drops metrics".
+		"OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative",
 	}
 }
 

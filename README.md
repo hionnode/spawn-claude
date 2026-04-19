@@ -44,6 +44,7 @@ OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
 OTEL_METRIC_EXPORT_INTERVAL=10000
 OTEL_LOGS_EXPORT_INTERVAL=5000
+OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
 ```
 
 Confirm ingestion by tailing `spawn-claude collector logs -f` while claude is running.

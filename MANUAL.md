@@ -157,8 +157,11 @@ export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
 export OTEL_METRIC_EXPORT_INTERVAL=10000
 export OTEL_LOGS_EXPORT_INTERVAL=5000
+export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
 claude
 ```
+
+The last variable is a belt-and-suspenders knob: Claude's OTel SDK currently hardcodes Delta temporality for monotonic sums and *ignores* this env var, but it's the OTel-spec-standard opt-out and costs nothing to set. The load-bearing fix — when you route through `otelcol.exporter.prometheus` → `prometheus.remote_write` — is an `otelcol.processor.deltatocumulative` in the Alloy pipeline. See [GRAFANA-CLOUD.md](GRAFANA-CLOUD.md) § "Delta temporality silently drops metrics".
 
 Confirm ingestion by tailing `/var/log/alloy/stderr.log` while claude runs — you should see OTLP payloads printed by the `debug` exporter.
 
