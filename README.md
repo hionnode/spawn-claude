@@ -12,7 +12,7 @@ Platform: **macOS on Apple Silicon (darwin/arm64) only.**
 
 ## Contents
 
-- [Setup](#setup) — install spawn-claude → set up Alloy via Grafana Cloud's Collector Setup UI → run claude
+- [Setup](#setup) — install spawn-claude → set up Alloy via Grafana Cloud's Collector Setup UI → run claude → import dashboard
 - [Further reading](#further-reading) — architecture, Alloy cookbook, Grafana Cloud gotchas
 - [Commands](#commands)
 - [File layout after install](#file-layout-after-install)
@@ -149,6 +149,26 @@ spawn-claude run --direct -- <claude args>                   # sends OTLP straig
 ```
 
 `--direct` reads `[direct].vendor` from `~/.config/spawn-claude/config.toml` (override with `--vendor=<preset>`), loads the preset's required secrets, and exports the per-vendor OTLP env block before exec'ing `claude`. No local collector is involved — the Alloy LaunchDaemon doesn't even need to be running. Useful for quick one-off debugging against a vendor without committing the collector config.
+
+### 4. Import the dashboard
+
+`grafana.json` (repo root) is a v2-schema dashboard tuned to the metrics + log events Claude Code emits through this Alloy pipeline. Import it once you've seen `claude_code_*` metrics arrive in Grafana Cloud Explore (verification step in §2.5).
+
+In Grafana Cloud: **Dashboards → New → Import**, paste the contents of `grafana.json`, pick `grafanacloud-prom` for `DS_PROMETHEUS` and `grafanacloud-logs` for `DS_LOKI`, **Import**.
+
+**Headline strip — the at-a-glance row.** Six totals (Commits, PRs, Lines+, Lines−, Tokens, Cost) sit above three derived ratios that aren't in the raw metric schema: **Cache Hit Rate** (`cacheRead / (input + cacheRead)`), **Tool Accept Rate** (accept / total decisions), and **Cost per Session**. Cache Hit Rate is the single biggest cost lever — cached input tokens cost ~10% of fresh input. Anything under ~70% is a real signal.
+
+![Dashboard Overview row: 6 headline stats over 4 derived stats over Active Time](docs/images/dashboard-overview.png)
+
+**Full dashboard.** Five rows (Overview / Cost & Tokens / Activity & Productivity / Leaderboards / Request & Tool Activity) covering 30 panels:
+
+![Full Claude Code Metrics dashboard, all five rows](docs/images/dashboard-full.png)
+
+**The "Request & Tool Activity (via Loki)" row.** The 8 Prometheus metrics give you counters; Claude Code also emits 4 *log* events (`api_request`, `user_prompt`, `tool_decision`, `tool_result`) with rich attributes (`duration_ms`, `cost_usd`, `success`, `tool_name`, `model`, `prompt_length`...). The bottom row plots their rates and exposes a filterable log stream so you can drill into individual events:
+
+![Loki row: API request rate, user prompt rate, tool decision/result rate, recent events log stream](docs/images/dashboard-loki.png)
+
+For a deeper-dive metric (e.g. P95 API latency from `api_request.duration_ms`, tool error rate by `tool_name`), use the Recent Events panel to confirm Loki's structured-metadata shape in your stack, then add a panel with `| json | unwrap <attr>`. The four shipped Loki panels use pure log-line regex so they work regardless of how the OTel→Loki bridge serializes attributes.
 
 ## Further reading
 
